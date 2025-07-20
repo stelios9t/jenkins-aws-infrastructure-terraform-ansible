@@ -1,0 +1,16 @@
+- name: Install Java
+  apt:
+    name: openjdk-17-jdk
+    state: present
+    update_cache: yes
+
+- name: Create jenkins user
+  user:
+    name: jenkins
+    shell: /bin/bash
+    create_home: yes
+
+- name: Set up authorized SSH key for jenkins user
+  authorized_key:
+    user: jenkins
+    key: "{{ lookup('file', '../../keys/jenkins-key.pub') }}"

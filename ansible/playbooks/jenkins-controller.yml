@@ -1,0 +1,5 @@
+- name: Configure Jenkins Controller
+  hosts: controller
+  become: true
+  roles:
+    - controller

@@ -1,0 +1,5 @@
+- name: Configure Jenkins Agent
+  hosts: agent
+  become: true
+  roles:
+    - agent
