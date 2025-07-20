@@ -29,3 +29,10 @@ This project sets up a production-style Jenkins CI/CD system on AWS using:
 - SSH key-based agent authentication
 - Jenkins agent auto-registration via Groovy
 - Firewall rules (UFW + Security Groups)
+
+![architecture](assets/architecture-diagram.png)
+
+## Docs
+
+See [ansible.md](docs/ansible.md) for details
+See [results.md](docs/results.md) for screenshots
