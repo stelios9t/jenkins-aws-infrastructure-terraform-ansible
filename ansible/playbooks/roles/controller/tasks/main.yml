@@ -1,0 +1,245 @@
+- name: Install Java
+  apt:
+    name: openjdk-17-jdk
+    state: present
+    update_cache: yes
+
+- name: Add Jenkins repository key
+  apt_key:
+    url: https://pkg.jenkins.io/debian/jenkins.io.key
+    state: present
+
+- name: Add Jenkins repository
+  apt_repository:
+    repo: "deb https://pkg.jenkins.io/debian-stable binary/"
+    state: present
+
+- name: Install Jenkins
+  apt:
+    name: jenkins
+    state: present
+
+- name: Ensure Jenkins is running
+  systemd:
+    name: jenkins
+    enabled: yes
+    state: started
+
+- name: Allow firewall ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: [22, 8080]
+
+- name: Enable firewall
+  ufw:
+    state: enabled
+    policy: deny
+- name: Download Jenkins CLI tool
+  get_url:
+    url: http://localhost:8080/jnlpJars/jenkins-cli.jar
+    dest: /tmp/jenkins-cli.jar
+
+# - name: Wait for Jenkins to be up before installing plugins
+#   uri:
+#     url: http://localhost:8080/login
+#     status_code: 200
+#   register: jenkins_status
+#   until: jenkins_status.status == 200
+#   retries: 30
+#   delay: 5
+
+- name: Wait for Jenkins to be ready
+  uri:
+    url: http://localhost:8080/login
+    status_code: 200
+  register: jenkins_login
+  until: jenkins_login.status == 200
+  retries: 30
+  delay: 5
+
+- name: Create directory for init scripts
+  file:
+    path: /var/lib/jenkins/init.groovy.d
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: 0755
+
+- name: Create default admin user
+  copy:
+    owner: jenkins
+    group: jenkins
+    mode: "0644"
+    dest: /var/lib/jenkins/init.groovy.d/basic-security.groovy
+    content: |
+      import jenkins.model.*
+      import hudson.security.*
+
+      def instance = Jenkins.getInstance()
+
+      println "--> creating local user 'admin'"
+      def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+      hudsonRealm.createAccount('admin', 'admin')
+      instance.setSecurityRealm(hudsonRealm)
+
+      def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+      strategy.setAllowAnonymousRead(false)
+      instance.setAuthorizationStrategy(strategy)
+
+      instance.save()
+
+- name: Set Jenkins URL
+  copy:
+    owner: jenkins
+    group: jenkins
+    mode: "0644"
+    dest: /var/lib/jenkins/init.groovy.d/set-url.groovy
+    content: |
+      import jenkins.model.*
+      def jlc = JenkinsLocationConfiguration.get()
+      jlc.setUrl("http://{{ ansible_host }}:8080")
+      jlc.save()
+  notify: Restart Jenkins
+
+- name: Force Restart Jenkins to apply admin user creation
+  systemd:
+    name: jenkins
+    state: restarted
+
+- name: Wait for Jenkins to be ready after admin setup
+  uri:
+    url: http://localhost:8080/login
+    status_code: 200
+  register: jenkins_ready
+  until: jenkins_ready.status == 200
+  retries: 30
+  delay: 5
+
+- name: Copy SSH private key to controller (for agent registration)
+  copy:
+    src: "../../keys/jenkins-key"
+    dest: "/home/ubuntu/.ssh/jenkins-key"
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+
+- name: Create .ssh directory for Jenkins user
+  file:
+    path: /var/lib/jenkins/.ssh
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: 0700
+
+- name: Copy private key to Jenkins home
+  copy:
+    src: "../../keys/jenkins-key"
+    dest: "/var/lib/jenkins/.ssh/id_rsa"
+    owner: jenkins
+    group: jenkins
+    mode: "0600"
+
+- name: Install Jenkins plugins using CLI
+  shell: >
+    java -jar /tmp/jenkins-cli.jar -s http://localhost:8080 -auth admin:admin install-plugin {{ item }} -deploy
+  loop:
+    - ssh-slaves
+    - workflow-aggregator
+    - matrix-auth
+    - blueocean
+    - prometheus
+  args:
+    warn: false
+
+- name: Deploy SSH-based agent auto-registration Groovy script
+  copy:
+    owner: jenkins
+    group: jenkins
+    mode: "0644"
+    dest: /var/lib/jenkins/init.groovy.d/agent-ssh.groovy
+    content: |
+      import jenkins.model.*
+      import hudson.plugins.sshslaves.*
+      import hudson.slaves.*
+      import hudson.model.*
+      import java.util.Collections
+
+      def agentName = "agent1"
+      def agentHome = "/home/jenkins"
+      def agentHost = "{{ hostvars['agent1']['ansible_host'] }}"
+      def credentialsId = "agent-ssh-key"
+
+      println "Checking for existing agent"
+      def instance = Jenkins.getInstance()
+
+      if (instance.getNode(agentName) == null) {
+          println "Creating SSH-based agent"
+
+          def launcher = new SSHLauncher(agentHost, 22, credentialsId, null, null, null, null, 10, 10, 60, null)
+
+          def agent = new DumbSlave(
+              agentName,
+              "Automatically created agent",
+              agentHome,
+              "1",
+              Node.Mode.NORMAL,
+              "linux-agent",
+              launcher,
+              new RetentionStrategy.Always(),
+              Collections.emptyList()
+          )
+
+          instance.addNode(agent)
+          println "Agent created."
+      } else {
+          println "Agent already exists."
+      }
+
+- name: Create SSH credentials for agent in Jenkins (Groovy)
+  copy:
+    owner: jenkins
+    group: jenkins
+    mode: "0644"
+    dest: /var/lib/jenkins/init.groovy.d/agent-ssh-creds.groovy
+    content: |
+      import jenkins.model.*
+      import com.cloudbees.plugins.credentials.*
+      import com.cloudbees.plugins.credentials.domains.*
+      import com.cloudbees.jenkins.plugins.sshcredentials.impl.*
+      import hudson.util.Secret
+
+      def instance = Jenkins.getInstance()
+      def store = instance.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
+
+      def existing = com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentials(
+        com.cloudbees.plugins.credentials.common.StandardUsernameCredentials.class,
+        instance
+      ).find { it.id == "agent-ssh-key" }
+
+      if (existing == null) {
+        println "Creating SSH key credential"
+
+        def privateKey = new BasicSSHUserPrivateKey(
+          CredentialsScope.GLOBAL,
+          "agent-ssh-key",
+          "jenkins",
+          new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
+            new File("/var/lib/jenkins/.ssh/id_rsa").text
+          ),
+          null,
+          "SSH key for connecting to agent"
+        )
+
+        store.addCredentials(Domain.global(), privateKey)
+      } else {
+        println "SSH credential already exists"
+      }
+
+  notify: Restart Jenkins
+
+- name: Restart Jenkins to apply Groovy scripts
+  systemd:
+    name: jenkins
+    state: restarted

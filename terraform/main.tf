@@ -37,7 +37,7 @@ resource "aws_security_group" "jenkins_sg" {
 }
 
 resource "aws_instance" "controller" {
-  ami           = "ami-080e1f13689e07408" 
+  ami           = "ami-0dc33c9c954b3f073" 
   instance_type = "t2.micro"
   key_name      = aws_key_pair.jenkins_key.key_name
   security_groups = [aws_security_group.jenkins_sg.name]
@@ -47,7 +47,7 @@ resource "aws_instance" "controller" {
 }
 
 resource "aws_instance" "agent" {
-  ami           = "ami-080e1f13689e07408"
+  ami           = "ami-0dc33c9c954b3f073"
   instance_type = "t2.micro"
   key_name      = aws_key_pair.jenkins_key.key_name
   security_groups = [aws_security_group.jenkins_sg.name]

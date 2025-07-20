@@ -9,8 +9,14 @@
     name: jenkins
     shell: /bin/bash
     create_home: yes
-
+# Adding to authorized_keys file
 - name: Set up authorized SSH key for jenkins user
   authorized_key:
     user: jenkins
     key: "{{ lookup('file', '../../keys/jenkins-key.pub') }}"
+
+- name: Force Restart Jenkins to apply new agent
+  systemd:
+    name: jenkins
+    state: restarted
+  delegate_to: controller
