@@ -16,6 +16,9 @@ resource "aws_security_group" "jenkins_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+# as shown in cidr blocks ingress is available from all IPs, which is not ideal
+# ideally jenkins should be placed in a private subnet with tighter security controls, but for the purpose of this project and not using a NAT gateway to increase costs cidr range will remain to all access
+# See private subnet implementation at the bottom
   }
 
   ingress {
@@ -62,6 +65,7 @@ resource "aws_instance" "agent" {
 # resource "aws_subnet" "private_subnet" {
 #   vpc_id                  = aws_vpc.main.id
 #   cidr_block              = "10.0.1.0/24"
+# prevents EC2 instances from getting a public IP in this subnet
 #   map_public_ip_on_launch = false
 # }
 
@@ -70,6 +74,7 @@ resource "aws_instance" "agent" {
 #   subnet_id     = aws_subnet.public_subnet.id
 # }
 
+# Route for all workloads in private subnets to access the internet through the NAT gateway
 # resource "aws_route_table" "private_rt" {
 #   vpc_id = aws_vpc.main.id
 #   route {
