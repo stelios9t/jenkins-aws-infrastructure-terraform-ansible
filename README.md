@@ -21,7 +21,7 @@ This project sets up a production-style Jenkins CI/CD system on AWS using:
 - **Ansible**
 - **Groovy**
 
-## Automation
+## Architecture Overview
 
 - Two EC2 instances (controller + agent)
 - Jenkins installation

@@ -69,38 +69,19 @@
 
 - name: Create default admin user
   copy:
+    src: basic-security.groovy
     owner: jenkins
     group: jenkins
     mode: "0644"
     dest: /var/lib/jenkins/init.groovy.d/basic-security.groovy
-    content: |
-      import jenkins.model.*
-      import hudson.security.*
-
-      def instance = Jenkins.getInstance()
-
-      println "--> creating local user 'admin'"
-      def hudsonRealm = new HudsonPrivateSecurityRealm(false)
-      hudsonRealm.createAccount('admin', 'admin')
-      instance.setSecurityRealm(hudsonRealm)
-
-      def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
-      strategy.setAllowAnonymousRead(false)
-      instance.setAuthorizationStrategy(strategy)
-
-      instance.save()
 
 - name: Set Jenkins URL
   copy:
+    src: set-url.groovy
     owner: jenkins
     group: jenkins
     mode: "0644"
     dest: /var/lib/jenkins/init.groovy.d/set-url.groovy
-    content: |
-      import jenkins.model.*
-      def jlc = JenkinsLocationConfiguration.get()
-      jlc.setUrl("http://{{ ansible_host }}:8080")
-      jlc.save()
   notify: Restart Jenkins
 
 - name: Force Restart Jenkins to apply admin user creation
@@ -143,7 +124,7 @@
 
 - name: Install Jenkins plugins using CLI
   shell: >
-    java -jar /tmp/jenkins-cli.jar -s http://localhost:8080 -auth admin:admin install-plugin {{ item }} -deploy
+    java -jar /tmp/jenkins-cli.jar -s http://localhost:8080 -auth {{ jenkins_admin_user }}:{{ jenkins_admin_pass }} install-plugin {{ item }} -deploy
   loop:
     - ssh-slaves
     - workflow-aggregator
@@ -155,87 +136,19 @@
 
 - name: Deploy SSH-based agent auto-registration Groovy script
   copy:
+    src: agent-ssh.groovy
     owner: jenkins
     group: jenkins
     mode: "0644"
     dest: /var/lib/jenkins/init.groovy.d/agent-ssh.groovy
-    content: |
-      import jenkins.model.*
-      import hudson.plugins.sshslaves.*
-      import hudson.slaves.*
-      import hudson.model.*
-      import java.util.Collections
-
-      def agentName = "agent1"
-      def agentHome = "/home/jenkins"
-      def agentHost = "{{ hostvars['agent1']['ansible_host'] }}"
-      def credentialsId = "agent-ssh-key"
-
-      println "Checking for existing agent"
-      def instance = Jenkins.getInstance()
-
-      if (instance.getNode(agentName) == null) {
-          println "Creating SSH-based agent"
-
-          def launcher = new SSHLauncher(agentHost, 22, credentialsId, null, null, null, null, 10, 10, 60, null)
-
-          def agent = new DumbSlave(
-              agentName,
-              "Automatically created agent",
-              agentHome,
-              "1",
-              Node.Mode.NORMAL,
-              "linux-agent",
-              launcher,
-              new RetentionStrategy.Always(),
-              Collections.emptyList()
-          )
-
-          instance.addNode(agent)
-          println "Agent created."
-      } else {
-          println "Agent already exists."
-      }
 
 - name: Create SSH credentials for agent in Jenkins (Groovy)
   copy:
+    src: agent-ssh-creds.groovy
     owner: jenkins
     group: jenkins
     mode: "0644"
     dest: /var/lib/jenkins/init.groovy.d/agent-ssh-creds.groovy
-    content: |
-      import jenkins.model.*
-      import com.cloudbees.plugins.credentials.*
-      import com.cloudbees.plugins.credentials.domains.*
-      import com.cloudbees.jenkins.plugins.sshcredentials.impl.*
-      import hudson.util.Secret
-
-      def instance = Jenkins.getInstance()
-      def store = instance.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
-
-      def existing = com.cloudbees.plugins.credentials.CredentialsProvider.lookupCredentials(
-        com.cloudbees.plugins.credentials.common.StandardUsernameCredentials.class,
-        instance
-      ).find { it.id == "agent-ssh-key" }
-
-      if (existing == null) {
-        println "Creating SSH key credential"
-
-        def privateKey = new BasicSSHUserPrivateKey(
-          CredentialsScope.GLOBAL,
-          "agent-ssh-key",
-          "jenkins",
-          new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(
-            new File("/var/lib/jenkins/.ssh/id_rsa").text
-          ),
-          null,
-          "SSH key for connecting to agent"
-        )
-
-        store.addCredentials(Domain.global(), privateKey)
-      } else {
-        println "SSH credential already exists"
-      }
 
   notify: Restart Jenkins
 

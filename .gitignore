@@ -2,3 +2,5 @@ terraform.tfstate
 terraform.tfstate.*
 *.tfplan
 .terraform.lock*
+terraform/.terraform
+.terraform
