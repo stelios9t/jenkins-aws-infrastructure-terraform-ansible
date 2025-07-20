@@ -142,7 +142,7 @@
     mode: "0644"
     dest: /var/lib/jenkins/init.groovy.d/agent-ssh.groovy
 
-- name: Create SSH credentials for agent in Jenkins (Groovy)
+- name: Create SSH credentials for agent in Jenkins
   copy:
     src: agent-ssh-creds.groovy
     owner: jenkins
