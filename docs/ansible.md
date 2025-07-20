@@ -4,6 +4,7 @@ Structure and key logic of Ansible playbooks used to provision and configure the
 
 ## Directory Structure
 
+```text
 ansible/
 ├── inventory.yml
 ├── group_vars/
@@ -21,6 +22,7 @@ ansible/
 │ └──── agent/
 │ └────── tasks/
 │ └──────── main.yml # Contains actual steps for agent deployment
+```
 
 ## Controller Role
 
